@@ -14,6 +14,8 @@ public:
   HesaiLidarClient(ros::NodeHandle node, ros::NodeHandle nh)
   {
     lidarPublisher = node.advertise<sensor_msgs::PointCloud2>("pandar", 10);
+    lidarDualPublisher = node.advertise<sensor_msgs::PointCloud2>("pandar_dual", 10);
+
     packetPublisher = node.advertise<hesai_lidar::PandarScan>("pandar_packets",10);
 
     string serverIp;
@@ -93,7 +95,12 @@ public:
       pcl_conversions::toPCL(ros::Time(timestamp), cld->header.stamp);
       sensor_msgs::PointCloud2 output;
       pcl::toROSMsg(*cld, output);
-      lidarPublisher.publish(output);
+      if (scan) {
+        lidarPublisher.publish(output);
+      } else {
+        output.header.frame_id = "Pandar40P";
+        lidarDualPublisher.publish(output);
+      }
       printf("timestamp: %f, point size: %ld.\n",timestamp, cld->points.size());
     }
     if(m_sPublishType == "both" || m_sPublishType == "raw"){
@@ -109,7 +116,7 @@ public:
   }
 
 private:
-  ros::Publisher lidarPublisher;
+  ros::Publisher lidarPublisher, lidarDualPublisher;
   ros::Publisher packetPublisher;
   PandarGeneralSDK* hsdk;
   string m_sPublishType;

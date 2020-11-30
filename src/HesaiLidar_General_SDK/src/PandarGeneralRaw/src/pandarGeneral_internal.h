@@ -314,7 +314,8 @@ class PandarGeneral_Internal {
 
   int ParseGPS(PandarGPS *packet, const uint8_t *recvbuf, const int size);
   void CalcPointXYZIT(Pandar40PPacket *pkt, int blockid,
-                      boost::shared_ptr<PPointCloud> cld);
+                      boost::shared_ptr<PPointCloud> cld,
+                      boost::shared_ptr<PPointCloud> cld_dual);
   void CalcL64PointXYZIT(HS_LIDAR_L64_Packet *pkt, int blockid, char chLaserNumber,
                       boost::shared_ptr<PPointCloud> cld);
   void CalcL20PointXYZIT(HS_LIDAR_L20_Packet *pkt, int blockid, char chLaserNumber,
@@ -326,6 +327,8 @@ class PandarGeneral_Internal {
   void FillPacket(const uint8_t *buf, const int len, double timestamp);
 
   void EmitBackMessege(char chLaserNumber, boost::shared_ptr<PPointCloud> cld, hesai_lidar::PandarScanPtr scan);
+  void EmitBackMessegeDual(char chLaserNumber, boost::shared_ptr<PPointCloud> cld, boost::shared_ptr<PPointCloud> cld_dual, hesai_lidar::PandarScanPtr scan);
+
   pthread_mutex_t lidar_lock_;
   sem_t lidar_sem_;
   boost::thread *lidar_recv_thr_;
