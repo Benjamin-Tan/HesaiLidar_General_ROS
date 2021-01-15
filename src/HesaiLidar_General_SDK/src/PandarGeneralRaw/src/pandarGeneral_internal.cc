@@ -701,10 +701,6 @@ void PandarGeneral_Internal::ProcessLiarPacket() {
   int ret = 0;
 
   boost::shared_ptr<PPointCloud> outMsg(new PPointCloud());
-  boost::shared_ptr<PPointCloud> outMsgDual(new PPointCloud());
-
-  boost::shared_ptr<PPointCloud> outMsgRingFilter(new PPointCloud());
-  boost::shared_ptr<PPointCloud> outMsgDualRingFilter(new PPointCloud());
 
   hesai_lidar::PandarScanPtr scan(new hesai_lidar::PandarScan);
   hesai_lidar::PandarPacket rawpacket;
@@ -923,15 +919,6 @@ void PandarGeneral_Internal::ProcessLiarPacket() {
 
     outMsg->header.frame_id = frame_id_;
     outMsg->height = 1;
-
-    outMsgDual->header.frame_id = frame_id_;
-    outMsgDual->height = 1;
-
-    outMsgRingFilter->header.frame_id = frame_id_;
-    outMsgRingFilter->height = 1;
-
-    outMsgDualRingFilter->header.frame_id = frame_id_;
-    outMsgDualRingFilter->height = 1;
   }
 }
 
@@ -1791,34 +1778,6 @@ void PandarGeneral_Internal::EmitBackMessege(char chLaserNumber, boost::shared_p
     cld->height = 1;
   }
   pcl_callback_(cld, cld->points[0].timestamp, scan, publisher_type); // the timestamp from first point cloud of cld
-  if (pcl_type_) {
-    for (int i=0; i<chLaserNumber; i++) {
-      PointCloudList[i].clear();
-      PointCloudList[i].reserve(MAX_POINT_CLOUD_NUM_PER_CHANNEL);
-      cld->points.clear();
-      cld->width = (uint32_t)cld->points.size();
-      cld->height = 1;
-    }
-  }
-}
-
-void PandarGeneral_Internal::EmitBackMessegeDual(char chLaserNumber, boost::shared_ptr<PPointCloud> cld, boost::shared_ptr<PPointCloud> cld_dual, hesai_lidar::PandarScanPtr scan, int publisher_type) {
-  if (pcl_type_) {
-    for (int i=0; i<chLaserNumber; i++) {
-      for (int j=0; j<PointCloudList[i].size(); j++) {
-        cld->push_back(PointCloudList[i][j]);
-      }
-    }
-  }
-  else{
-    cld->points.assign(PointCloud.begin(),PointCloud.begin() + iPointCloudIndex);
-    cld->width = (uint32_t)cld->points.size();
-    cld->height = 1;
-    iPointCloudIndex = 0;
-  }
-  if (scan) pcl_callback_(cld, cld->points[0].timestamp, scan, publisher_type); // the timestamp from first point cloud of cld
-  if (!scan) pcl_callback_(cld_dual, cld_dual->points[0].timestamp, NULL, publisher_type); 
-  
   if (pcl_type_) {
     for (int i=0; i<chLaserNumber; i++) {
       PointCloudList[i].clear();

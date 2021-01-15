@@ -331,7 +331,6 @@ class PandarGeneral_Internal {
   void FillPacket(const uint8_t *buf, const int len, double timestamp);
 
   void EmitBackMessege(char chLaserNumber, boost::shared_ptr<PPointCloud> cld, hesai_lidar::PandarScanPtr scan, int publisher_type = 0);
-  void EmitBackMessegeDual(char chLaserNumber, boost::shared_ptr<PPointCloud> cld, boost::shared_ptr<PPointCloud> cld_dual, hesai_lidar::PandarScanPtr scan, int publisher_type);
   void SetEnvironmentVariableTZ();
   pthread_mutex_t lidar_lock_;
   sem_t lidar_sem_;
