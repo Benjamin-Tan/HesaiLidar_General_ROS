@@ -50,7 +50,7 @@ class PandarGeneralSDK {
       boost::function<void(boost::shared_ptr<PPointCloud>, double, hesai_lidar::PandarScanPtr, int)>
           pcl_callback,
       boost::function<void(double)> gps_callback, uint16_t start_angle,
-      int tz, int pcl_type, std::string frame_id, std::string timestampType,
+      int tz, int pcl_type, std::string lidar_type, std::string frame_id, std::string timestampType,
       int start_ring_index, int end_ring_index); // the default timestamp type is LiDAR time
   /**
    * @brief Constructor
@@ -63,7 +63,7 @@ class PandarGeneralSDK {
    */
   PandarGeneralSDK(std::string pcap_path, \
       boost::function<void(boost::shared_ptr<PPointCloud>, double, hesai_lidar::PandarScanPtr, int)> pcl_callback, \
-      uint16_t start_angle, int tz, int pcl_type, std::string frame_id, std::string timestampType,
+      uint16_t start_angle, int tz, int pcl_type, std::string lidar_type, std::string frame_id, std::string timestampType,
       int start_ring_index, int end_ring_index); // the default timestamp type is LiDAR time
   ~PandarGeneralSDK();
 
