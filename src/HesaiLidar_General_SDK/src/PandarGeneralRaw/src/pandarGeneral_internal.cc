@@ -82,9 +82,10 @@ static std::vector<std::vector<PPoint> > PointCloudList(128);
 
 PandarGeneral_Internal::PandarGeneral_Internal(
     std::string device_ip, uint16_t lidar_port, uint16_t gps_port,
-    boost::function<void(boost::shared_ptr<PPointCloud>, double, hesai_lidar::PandarScanPtr)> pcl_callback,
+    boost::function<void(boost::shared_ptr<PPointCloud>, double, hesai_lidar::PandarScanPtr, int)> pcl_callback,
     boost::function<void(double)> gps_callback, uint16_t start_angle, int tz,
-    int pcl_type, std::string frame_id, std::string timestampType) {
+    int pcl_type, std::string frame_id, std::string timestampType,
+    int start_ring_index, int end_ring_index) {
       // LOG_FUNC();
   pthread_mutex_init(&lidar_lock_, NULL);
   sem_init(&lidar_sem_, 0, 0);
@@ -108,14 +109,24 @@ PandarGeneral_Internal::PandarGeneral_Internal(
   pcap_reader_ = NULL;
   m_sTimestampType = timestampType;
   m_dPktTimestamp = 0.0f;
+  
+  // default values (disable), enable only when is positive range
+  start_ring_index_ = -1;
+  end_ring_index_ = -1;
+  if (start_ring_index >= 0)
+  {
+    start_ring_index_ = start_ring_index;
+    end_ring_index_ = end_ring_index;
+  }
 
   Init();
 }
 
 PandarGeneral_Internal::PandarGeneral_Internal(std::string pcap_path, \
-    boost::function<void(boost::shared_ptr<PPointCloud>, double, hesai_lidar::PandarScanPtr)> \
+    boost::function<void(boost::shared_ptr<PPointCloud>, double, hesai_lidar::PandarScanPtr, int)> \
     pcl_callback, uint16_t start_angle, int tz, int pcl_type, \
-    std::string frame_id, std::string timestampType) {
+    std::string frame_id, std::string timestampType, \
+    int start_ring_index, int end_ring_index) {
   pthread_mutex_init(&lidar_lock_, NULL);
   sem_init(&lidar_sem_, 0, 0);
 
@@ -137,6 +148,15 @@ PandarGeneral_Internal::PandarGeneral_Internal(std::string pcap_path, \
   connect_lidar_ = false;
   m_sTimestampType = timestampType;
   m_dPktTimestamp = 0.0f;
+
+  // default values (disable), enable only when is positive range
+  start_ring_index_ = -1;
+  end_ring_index_ = -1;
+  if (start_ring_index >= 0)
+  {
+    start_ring_index_ = start_ring_index;
+    end_ring_index_ = end_ring_index;
+  }
 
   Init();
 }
@@ -628,6 +648,9 @@ void PandarGeneral_Internal::ProcessLiarPacket() {
   boost::shared_ptr<PPointCloud> outMsg(new PPointCloud());
   boost::shared_ptr<PPointCloud> outMsgDual(new PPointCloud());
 
+  boost::shared_ptr<PPointCloud> outMsgRingFilter(new PPointCloud());
+  boost::shared_ptr<PPointCloud> outMsgDualRingFilter(new PPointCloud());
+
   hesai_lidar::PandarScanPtr scan(new hesai_lidar::PandarScan);
   hesai_lidar::PandarPacket rawpacket;
 
@@ -674,17 +697,25 @@ void PandarGeneral_Internal::ProcessLiarPacket() {
               (last_azimuth_ < start_angle_ &&
                start_angle_ <= pkt.blocks[i].azimuth)) {
             if (pcl_callback_ && (outMsg->points.size() > 0 || PointCloudList[0].size() > 0)) {
-              EmitBackMessegeDual(LASER_COUNT, outMsg, outMsgDual, scan);
+              EmitBackMessegeDual(LASER_COUNT, outMsg, outMsgDual, scan, 0);
               if (outMsgDual->points.size() > 0) {
-                EmitBackMessegeDual(LASER_COUNT, outMsg, outMsgDual, NULL);
+                EmitBackMessegeDual(LASER_COUNT, outMsg, outMsgDual, NULL, 1);
+              }
+              if (outMsgRingFilter->points.size() > 0) {
+                EmitBackMessegeDual(LASER_COUNT, outMsg, outMsgRingFilter, NULL, 2);
+              }
+              if (outMsgDualRingFilter->points.size() > 0) {
+                EmitBackMessegeDual(LASER_COUNT, outMsg, outMsgDualRingFilter, NULL, 3);
               }
               scan->packets.clear();
               outMsg.reset(new PPointCloud());
               outMsgDual.reset(new PPointCloud());
+              outMsgRingFilter.reset(new PPointCloud());
+              outMsgDualRingFilter.reset(new PPointCloud());
             }
           }
         }
-        CalcPointXYZIT(&pkt, i, outMsg, outMsgDual);
+        CalcPointXYZIT(&pkt, i, outMsg, outMsgDual, outMsgRingFilter, outMsgDualRingFilter);
         last_azimuth_ = pkt.blocks[i].azimuth;
       }
     } else if (packet.size == HS_LIDAR_L64_6PACKET_SIZE || \
@@ -838,6 +869,15 @@ void PandarGeneral_Internal::ProcessLiarPacket() {
 
     outMsg->header.frame_id = frame_id_;
     outMsg->height = 1;
+
+    outMsgDual->header.frame_id = frame_id_;
+    outMsgDual->height = 1;
+
+    outMsgRingFilter->header.frame_id = frame_id_;
+    outMsgRingFilter->height = 1;
+
+    outMsgDualRingFilter->header.frame_id = frame_id_;
+    outMsgDualRingFilter->height = 1;
   }
 }
 
@@ -1251,7 +1291,9 @@ int PandarGeneral_Internal::ParseGPS(PandarGPS *packet, const uint8_t *recvbuf, 
 
 void PandarGeneral_Internal::CalcPointXYZIT(Pandar40PPacket *pkt, int blockid,
                                         boost::shared_ptr<PPointCloud> cld,
-                                        boost::shared_ptr<PPointCloud> cld_dual) {
+                                        boost::shared_ptr<PPointCloud> cld_dual,
+                                        boost::shared_ptr<PPointCloud> ringFilter_cld,
+                                        boost::shared_ptr<PPointCloud> ringFilter_cld_dual) {
   Pandar40PBlock *block = &pkt->blocks[blockid];
 
   double unix_second =
@@ -1302,13 +1344,34 @@ void PandarGeneral_Internal::CalcPointXYZIT(Pandar40PPacket *pkt, int blockid,
 
     point.ring = i;
 
+    bool enable_ring_filter = false;
+    enable_ring_filter = i >= start_ring_index_ && i <= end_ring_index_;
+
     if (pcl_type_) {
       PointCloudList[i].push_back(point);
     } else {
-      if (blockid % 2) {
-        cld_dual->push_back(point); // dual return points (last)
+      if (pkt->echo == 0x39) {
+        // dual return mode
+        if (blockid % 2) {
+          cld_dual->push_back(point); // dual return points (strongest)
+          if (enable_ring_filter)
+          {
+            ringFilter_cld_dual->push_back(point);
+          }
+        } else {
+          cld->push_back(point); // single return points (last)
+          if (enable_ring_filter)
+          {
+            ringFilter_cld->push_back(point);
+          }
+        }
       } else {
-        cld->push_back(point); // single return points (strongest)
+        // single return mode
+        cld->push_back(point); // single return points (last)
+        if (enable_ring_filter)
+        {
+          ringFilter_cld->push_back(point);
+        }
       }
     }
   }
@@ -1641,7 +1704,7 @@ void PandarGeneral_Internal::EmitBackMessege(char chLaserNumber, boost::shared_p
       }
     }
   }
-  pcl_callback_(cld, cld->points[0].timestamp, scan); // the timestamp from first point cloud of cld
+  pcl_callback_(cld, cld->points[0].timestamp, scan, 0); // the timestamp from first point cloud of cld
   //cld.reset(new PPointCloud());
   if (pcl_type_) {
     for (int i=0; i<128; i++) {
@@ -1650,7 +1713,7 @@ void PandarGeneral_Internal::EmitBackMessege(char chLaserNumber, boost::shared_p
   }
 }
 
-void PandarGeneral_Internal::EmitBackMessegeDual(char chLaserNumber, boost::shared_ptr<PPointCloud> cld, boost::shared_ptr<PPointCloud> cld_dual, hesai_lidar::PandarScanPtr scan) {
+void PandarGeneral_Internal::EmitBackMessegeDual(char chLaserNumber, boost::shared_ptr<PPointCloud> cld, boost::shared_ptr<PPointCloud> cld_dual, hesai_lidar::PandarScanPtr scan, int publisher_type) {
   if (pcl_type_) {
     for (int i=0; i<chLaserNumber; i++) {
       for (int j=0; j<PointCloudList[i].size(); j++) {
@@ -1658,8 +1721,8 @@ void PandarGeneral_Internal::EmitBackMessegeDual(char chLaserNumber, boost::shar
       }
     }
   }
-  if (scan) pcl_callback_(cld, cld->points[0].timestamp, scan); // the timestamp from first point cloud of cld
-  if (!scan) pcl_callback_(cld_dual, cld_dual->points[0].timestamp, NULL); 
+  if (scan) pcl_callback_(cld, cld->points[0].timestamp, scan, publisher_type); // the timestamp from first point cloud of cld
+  if (!scan) pcl_callback_(cld_dual, cld_dual->points[0].timestamp, NULL, publisher_type); 
   //cld.reset(new PPointCloud());
   if (pcl_type_) {
     for (int i=0; i<128; i++) {

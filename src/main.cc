@@ -16,6 +16,9 @@ public:
     lidarPublisher = node.advertise<sensor_msgs::PointCloud2>("pandar", 10);
     lidarDualPublisher = node.advertise<sensor_msgs::PointCloud2>("pandar_dual", 10);
 
+    lidarRingFilterPublisher = node.advertise<sensor_msgs::PointCloud2>("pandar_ring_filter", 10);
+    lidarDualRingFilterPublisher = node.advertise<sensor_msgs::PointCloud2>("pandar_dual_ring_filter", 10);
+
     packetPublisher = node.advertise<hesai_lidar::PandarScan>("pandar_packets",10);
 
     string serverIp;
@@ -27,6 +30,9 @@ public:
     int pclDataType;
     string pcapFile;
     string dataType;
+    
+    int startRingIndex;
+    int endRingIndex;
 
     nh.getParam("pcap_file", pcapFile);
     nh.getParam("server_ip", serverIp);
@@ -40,9 +46,13 @@ public:
     nh.getParam("timestamp_type", m_sTimestampType);
     nh.getParam("data_type", dataType);
 
+    nh.getParam("start_ring_index", startRingIndex);
+    nh.getParam("end_ring_index", endRingIndex);
+
     if(!pcapFile.empty()){
-      hsdk = new PandarGeneralSDK(pcapFile, boost::bind(&HesaiLidarClient::lidarCallback, this, _1, _2, _3), \
-      static_cast<int>(startAngle * 100 + 0.5), 0, pclDataType, lidarType, m_sTimestampType);
+      hsdk = new PandarGeneralSDK(pcapFile, boost::bind(&HesaiLidarClient::lidarCallback, this, _1, _2, _3, _4), \
+      static_cast<int>(startAngle * 100 + 0.5), 0, pclDataType, lidarType, m_sTimestampType,
+      startRingIndex, endRingIndex);
       if (hsdk != NULL) {
         ifstream fin(lidarCorrectionFile);
         int length = 0;
@@ -58,8 +68,9 @@ public:
       }
     }
     else if ("rosbag" == dataType){
-      hsdk = new PandarGeneralSDK("", boost::bind(&HesaiLidarClient::lidarCallback, this, _1, _2, _3), \
-      static_cast<int>(startAngle * 100 + 0.5), 0, pclDataType, lidarType, m_sTimestampType);
+      hsdk = new PandarGeneralSDK("", boost::bind(&HesaiLidarClient::lidarCallback, this, _1, _2, _3, _4), \
+      static_cast<int>(startAngle * 100 + 0.5), 0, pclDataType, lidarType, m_sTimestampType,
+      startRingIndex, endRingIndex);
       if (hsdk != NULL) {
         ifstream fin(lidarCorrectionFile);
         int length = 0;
@@ -77,8 +88,9 @@ public:
     }
     else {
       hsdk = new PandarGeneralSDK(serverIp, lidarRecvPort, gpsPort, \
-        boost::bind(&HesaiLidarClient::lidarCallback, this, _1, _2, _3), \
-        NULL, static_cast<int>(startAngle * 100 + 0.5), 0, pclDataType, lidarType, m_sTimestampType);
+        boost::bind(&HesaiLidarClient::lidarCallback, this, _1, _2, _3, _4), \
+        NULL, static_cast<int>(startAngle * 100 + 0.5), 0, pclDataType, lidarType, m_sTimestampType,
+        startRingIndex, endRingIndex);
     }
     
     if (hsdk != NULL) {
@@ -89,23 +101,36 @@ public:
     }
   }
 
-  void lidarCallback(boost::shared_ptr<PPointCloud> cld, double timestamp, hesai_lidar::PandarScanPtr scan) // the timestamp from first point cloud of cld
+  void lidarCallback(boost::shared_ptr<PPointCloud> cld, double timestamp, hesai_lidar::PandarScanPtr scan, int publisher_type) // the timestamp from first point cloud of cld
   {
     if(m_sPublishType == "both" || m_sPublishType == "points"){
       pcl_conversions::toPCL(ros::Time(timestamp), cld->header.stamp);
       sensor_msgs::PointCloud2 output;
       pcl::toROSMsg(*cld, output);
-      if (scan) {
-        lidarPublisher.publish(output);
-      } else {
-        output.header.frame_id = "Pandar40P";
-        lidarDualPublisher.publish(output);
+      switch (publisher_type) {
+        case 0:
+          lidarPublisher.publish(output);
+          break;
+        case 1:
+          lidarDualPublisher.publish(output);
+          break;
+        case 2:
+          lidarRingFilterPublisher.publish(output);
+          break;
+        case 3:
+          lidarDualRingFilterPublisher.publish(output);
+          break;
+        default:
+          break;
       }
       printf("timestamp: %f, point size: %ld.\n",timestamp, cld->points.size());
     }
     if(m_sPublishType == "both" || m_sPublishType == "raw"){
-      packetPublisher.publish(scan);
-      printf("raw size: %d.\n", scan->packets.size());
+      if (publisher_type == 0)
+      {
+        packetPublisher.publish(scan);
+        printf("raw size: %d.\n", scan->packets.size());
+      }
     }
   }
 
@@ -116,7 +141,7 @@ public:
   }
 
 private:
-  ros::Publisher lidarPublisher, lidarDualPublisher;
+  ros::Publisher lidarPublisher, lidarDualPublisher, lidarRingFilterPublisher, lidarDualRingFilterPublisher;
   ros::Publisher packetPublisher;
   PandarGeneralSDK* hsdk;
   string m_sPublishType;
