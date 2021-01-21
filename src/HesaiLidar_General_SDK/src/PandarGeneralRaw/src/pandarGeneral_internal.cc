@@ -869,6 +869,15 @@ void PandarGeneral_Internal::ProcessLiarPacket() {
                start_angle_ <= pkt.blocks[i].azimuth)) {
             if (pcl_callback_ && (iPointCloudIndex > 0 || PointCloudList[0].size() > 0)) {
               EmitBackMessege(pkt.header.chLaserNumber, outMsg, scan);
+              if (iPointCloudDualIndex > 0) {
+                EmitBackMessege(pkt.header.chLaserNumber, outMsg, scan, 1);
+              }
+              if (iPointCloudRingFilterIndex > 0) {
+                EmitBackMessege(pkt.header.chLaserNumber, outMsg, scan, 2);
+              }
+              if (iPointCloudDualRingFilterIndex > 0) {
+                EmitBackMessege(pkt.header.chLaserNumber, outMsg, scan, 3);
+              }
               scan->packets.clear();
             }
           }
@@ -1659,11 +1668,49 @@ void PandarGeneral_Internal::CalcQTPointXYZIT(HS_LIDAR_QT_Packet *pkt, int block
     }
 
     point.ring = i;
+    bool enable_ring_filter = false;
+    enable_ring_filter = i >= start_ring_index_ && i <= end_ring_index_;
+
     if (pcl_type_)
       PointCloudList[i].push_back(point);
     else
-      PointCloud[iPointCloudIndex] = point;
-      iPointCloudIndex++;
+    {
+      if (pkt->echo == 0x05) 
+      {
+        // dual return mode
+        if (blockid % 2) 
+        {
+          PointCloudDual[iPointCloudDualIndex] = point;
+          iPointCloudDualIndex++; // dual return points (strongest)
+          if (enable_ring_filter)
+          {
+            PointCloudDualRingFilter[iPointCloudDualRingFilterIndex] = point;
+            iPointCloudDualRingFilterIndex++;
+          }
+        } 
+        else 
+        {
+          PointCloud[iPointCloudIndex] = point;
+          iPointCloudIndex++; // single return points (last)
+          if (enable_ring_filter)
+          {
+            PointCloudRingFilter[iPointCloudRingFilterIndex] = point;
+            iPointCloudRingFilterIndex++;
+          }
+        }
+      } 
+      else 
+      {
+        // single return mode
+        PointCloud[iPointCloudIndex] = point;
+        iPointCloudIndex++;
+        if (enable_ring_filter)
+        {
+          PointCloudRingFilter[iPointCloudRingFilterIndex] = point;
+          iPointCloudRingFilterIndex++;
+        }
+      }
+    }
   }
 }
 
