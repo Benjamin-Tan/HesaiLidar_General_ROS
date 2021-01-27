@@ -722,10 +722,8 @@ void PandarGeneral_Internal::ProcessLiarPacket() {
     // memcpy(&rawpacket, &packet, 1512);
     rawpacket.stamp.sec = floor(packet.stamp);
     rawpacket.stamp.nsec = (packet.stamp - floor(packet.stamp))*1000000000;
-    // TODO(ben) temporary disable this to allow backward compatibility
-    // need to update the PandarPacket.msg ROS
-    // rawpacket.size = packet.size;
-    // rawpacket.data.resize(packet.size);
+    rawpacket.size = packet.size;
+    rawpacket.data.resize(packet.size);
     memcpy(&rawpacket.data[0], &packet.data[0], packet.size);
     m_dPktTimestamp = packet.stamp;
     // printf("##m_dPktTimestamp: %lf\n", m_dPktTimestamp);
